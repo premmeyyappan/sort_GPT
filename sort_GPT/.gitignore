@@ -1,0 +1,14 @@
+# macOS system files
+.DS_Store
+
+# Exported data and generated outputs
+*.zip
+conversations.json
+images/
+Chats_MD/
+Final_MD/
+YAML_content/
+
+# Python cache and logs
+__pycache__/
+*.log
