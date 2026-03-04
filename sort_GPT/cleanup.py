@@ -6,6 +6,7 @@ import zipfile
 import shutil
 import tempfile
 import os
+import json  # <-- added
 
 # Image extensions we'll treat as "images"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".svg"}
@@ -110,6 +111,45 @@ def merge_images_into_root(images_src: Path, root_images: Path, dry: bool):
 
     print(f"Merged images: moved={moved}, kept_existing={kept_existing}")
 
+def merge_conversation_shards(extract_dir: Path, dry: bool) -> Path | None:
+    """
+    If conversations.json is missing, merge conversations-00*.json shards into conversations.json.
+    Returns the path to conversations.json if created/targeted, else None if no shards found.
+    """
+    shards = sorted(extract_dir.glob("conversations-*.json"))
+    if not shards:
+        return None
+
+    out_path = extract_dir / "conversations.json"
+
+    if dry:
+        print(f"[DRY] merge {len(shards)} shard(s) -> {out_path.name}")
+        for s in shards:
+            print(f"[DRY]   include {s.name}")
+        return out_path
+
+    merged = []
+    for s in shards:
+        try:
+            data = json.loads(s.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"ERROR: Failed to read/parse shard {s.name}: {e}")
+            sys.exit(1)
+
+        if not isinstance(data, list):
+            print(f"ERROR: Shard {s.name} is not a JSON list; cannot merge safely.")
+            sys.exit(1)
+
+        merged.extend(data)
+
+    try:
+        out_path.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"ERROR: Failed to write merged conversations.json: {e}")
+        sys.exit(1)
+
+    return out_path
+
 def main():
     ap = argparse.ArgumentParser(
         description="Unzip a ChatGPT export, keep conversations.json + images, move to Sort_GPT root, clean the rest."
@@ -186,6 +226,11 @@ def main():
 
     # 5) Move conversations.json up to root (replace if exists)
     conversations_src = extract_dir / "conversations.json"
+    if not conversations_src.exists():
+        merged_path = merge_conversation_shards(extract_dir, dry)
+        if merged_path is not None:
+            conversations_src = merged_path
+
     if not conversations_src.exists():
         print("ERROR: conversations.json not found in the zip contents.")
         exit_code = 1
